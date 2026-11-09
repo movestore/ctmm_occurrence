@@ -118,7 +118,7 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
     mode = "cherry-pick"
   )
   
-  return(reactive({ 
-    c(data[[2]], list(occu), data[[1]])
-  })) ## if data are not modified, the unmodified input data must be returned
+  return(reactive({
+    list(model = data[[1]], uds = occu, data = data[[2]])
+  }))
 }

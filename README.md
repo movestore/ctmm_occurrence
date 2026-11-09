@@ -19,7 +19,13 @@ The app requires a `ctmm model with data` as input.
 
 
 ### Output data
-`ctmm UD with Data and Model` including the occurrance distribution.
+`ctmm ud with data`: a list with three elements:
+
+1. `model`: the list of `ctmm` models from the input.
+2. `uds`: a list containing the occurrence distribution (an object of class
+   `UD`) for each animal.
+3. `data`: the tracking data from the input (an object of type
+   `telemetry.list`).
 
 ### Artefacts
 
