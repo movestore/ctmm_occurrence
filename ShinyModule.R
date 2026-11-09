@@ -100,6 +100,9 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
         labels  = names(occu))  
     
   })
+  # The button is left out of saved settings. Otherwise restoring it would
+  # count as a click and hide all animals when the App opens.
+  setBookmarkExclude("clear")
   observeEvent(input$clear, {
     leafletProxy("map") |> 
       hideGroup(names(occu.leaflet()))
