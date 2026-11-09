@@ -41,22 +41,27 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
     map(st_bbox)
   bbx <- do.call(rbind, bbx)
   
+  # Occurrence contours at the chosen isopleth level: a list with one sf
+  # object per animal, in the same order and with the same names as occu
   occu.iso <- reactive({
-    occu_sf <- map(occu, ~ sf::st_as_sf(ctmm::SpatialPolygonsDataFrame.UD(.x, level.UD = input$isopleth_levels))) |> bind_rows()
-    
+    occu_sf <- map(
+      occu,
+      ~ sf::st_as_sf(
+        ctmm::SpatialPolygonsDataFrame.UD(.x, level.UD = input$isopleth_levels)
+      )
+    )
+
     # export as geopackage
-    occu_sf |> 
+    occu_sf |>
+      bind_rows() |>
       sf::st_write(appArtifactPath("occurrence.gpkg"), append = FALSE)
+
     occu_sf
   })
-  
-  
+
+  # The same contours in longitude/latitude for the map
   occu.leaflet <- reactive({
-    occu_sf <- occu.iso() %>%  
-      st_transform(4326) |> 
-      group_split(name)
-    names(occu_sf) <- names(occu)
-    occu_sf
+    map(occu.iso(), ~ st_transform(.x, 4326))
   })
   
   output$map <- renderLeaflet({
