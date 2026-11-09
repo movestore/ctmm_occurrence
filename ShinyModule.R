@@ -21,9 +21,13 @@ shinyModuleUserInterface <- function(id, label) {
              ),
       ), 
       column(6, 
-             sliderInput(ns("opacity"), "Opacity", min = 0, max = 1, value = 0.5), 
-             actionButton(ns("clear"), label = "Remove all animals from map")
-      ) 
+             sliderInput(ns("opacity"), "Opacity", min = 0, max = 1, value = 0.5),
+             div(
+               style = "display: flex; flex-wrap: wrap; gap: 6px;",
+               actionButton(ns("add_all"), label = "Add all animals to map", class = "btn-sm"),
+               actionButton(ns("clear"), label = "Remove all animals from map", class = "btn-sm")
+             )
+      )
     ),
     hr(),
     shinycssloaders::withSpinner(leafletOutput(ns("map"), height = "800"))
@@ -99,9 +103,13 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
         labels  = names(occu))  
     
   })
-  # The button is left out of saved settings. Otherwise restoring it would
-  # count as a click and hide all animals when the App opens.
-  setBookmarkExclude("clear")
+  # The two buttons are left out of saved settings. Otherwise restoring them
+  # would count as a click and hide or show the animals when the App opens.
+  setBookmarkExclude(c("add_all", "clear"))
+  observeEvent(input$add_all, {
+    leafletProxy("map") |>
+      showGroup(names(occu.leaflet()))
+  })
   observeEvent(input$clear, {
     leafletProxy("map") |> 
       hideGroup(names(occu.leaflet()))
