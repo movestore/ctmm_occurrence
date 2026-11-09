@@ -62,10 +62,8 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
   output$map <- renderLeaflet({
     leaflet() |> 
       addTiles(group = "OSM") |> 
-      addTiles('http://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 
-               options = providerTileOptions(noWrap = TRUE), group="World Imagery") |> 
-      addProviderTiles(providers$Stamen.Toner, group = "Toner") |> 
-      addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") |> 
+      addProviderTiles(providers$Esri.WorldImagery,
+                       options = providerTileOptions(noWrap = TRUE), group = "World Imagery") |>
       fitBounds(min(bbx[, 1]), min(bbx[, 2]), max(bbx[, 3]), max(bbx[, 4]))
     
   })
@@ -87,7 +85,7 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
     
     m |> 
       addLayersControl(
-        baseGroups = c("OSM", "Wolrd Imagery", "Toner", "Toner Lite"),
+        baseGroups = c("OSM", "World Imagery"),
         overlayGroups = names(occu.leaflet()),
         options = layersControlOptions(collapsed = TRUE)
       ) |> 
