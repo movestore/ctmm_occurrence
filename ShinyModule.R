@@ -117,7 +117,7 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
     writeRaster(occu[[x]], file.path(targetDirUDs, paste0(x, ".tif")), overwrite = TRUE))
   
   zip::zip(
-    zipfile = appArtifactPath("occurence_uds.zip"),
+    zipfile = appArtifactPath("occurrence_uds.zip"),
     files = list.files(targetDirUDs, full.names = TRUE, pattern = "tif$"),
     mode = "cherry-pick"
   )
