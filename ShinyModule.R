@@ -1,8 +1,6 @@
 library(shiny)
-library(shinyWidgets)
 library(ctmm)
 library(sf)
-library(glue)
 library(dplyr)
 library(purrr)
 library(leaflet)
