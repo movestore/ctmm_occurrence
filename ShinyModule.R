@@ -79,7 +79,8 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
       clearControls()
     for (i in 1:length(occu.leaflet())) {
       m <- m |> addPolygons(data = occu.leaflet()[[i]],
-                            group = names(occu.leaflet())[i], 
+                            group = names(occu.leaflet())[i],
+                            label = ~name,
                             color = cols[i],
                             fillColor = cols[i],
                             fillOpacity = input$opacity)
