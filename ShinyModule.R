@@ -20,7 +20,15 @@ ud_contours <- function(ud, level.UD) {
   # number of rings and drops the areas inside an even number (holes).
   geometries <- lapply(spdf@polygons, function(contour) {
     rings <- lapply(contour@Polygons, function(ring) sf::st_polygon(list(ring@coords)))
-    sf::st_cast(Reduce(sf::st_sym_difference, rings), "MULTIPOLYGON")
+    geom <- Reduce(sf::st_sym_difference, rings)
+
+    # Rings that touch can leave zero-width line fragments in the result.
+    # Keep only the polygon parts.
+    if (inherits(geom, "GEOMETRYCOLLECTION")) {
+      geom <- sf::st_union(sf::st_collection_extract(sf::st_sfc(geom), "POLYGON"))[[1]]
+    }
+
+    sf::st_cast(geom, "MULTIPOLYGON")
   })
 
   # Rebuild output to mirror `ctmm::SpatialPolygonsDataFrame.UD()` structure.
