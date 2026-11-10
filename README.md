@@ -4,6 +4,10 @@ MoveApps
 
 GitHub repository: https://github.com/movestore/ctmm_occurrence
 
+<p align="center">
+  <img alt="Screenshot of the App's UI" src="readme_thumbnail.png" width="700">
+</p>
+
 ## Description
 Use a fitted continuous-time movement model (CTMM) to estimate the occurrence
 distribution for each of a set of animals using Kriging and display the
