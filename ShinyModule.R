@@ -1,14 +1,35 @@
 library(shiny)
-library(shinyWidgets)
 library(ctmm)
 library(sf)
-library(glue)
 library(dplyr)
 library(purrr)
 library(leaflet)
 library(zip)
 library(shinycssloaders)
 
+# Generate contour polygons for the occurrence distribution at the given
+# isopleth level. This ensures that internal holes within the distribution
+# contours are correctly left unfilled. At the time of writing, there is a bug
+# in ctmm (1.3.x) that does not mark these holes correctly, meaning that the
+# entire region within the external contour is filled.
+ud_contours <- function(ud, level.UD) {
+  spdf <- ctmm::SpatialPolygonsDataFrame.UD(ud, level.UD = level.UD)
+
+  # Use even-odd rule to identify holes. Contour rings are nested by definition,
+  # so the symmetric difference of all rings keeps the area inside an odd
+  # number of rings and drops the areas inside an even number (holes).
+  geometries <- lapply(spdf@polygons, function(contour) {
+    rings <- lapply(contour@Polygons, function(ring) sf::st_polygon(list(ring@coords)))
+    sf::st_cast(Reduce(sf::st_sym_difference, rings), "MULTIPOLYGON")
+  })
+
+  # Rebuild output to mirror `ctmm::SpatialPolygonsDataFrame.UD()` structure.
+  # Contour names are the ctmm polygon `ID` values.
+  sf::st_sf(
+    name = vapply(spdf@polygons, function(contour) contour@ID, character(1)),
+    geometry = sf::st_sfc(geometries, crs = sf::st_crs(spdf@proj4string))
+  )
+}
 
 shinyModuleUserInterface <- function(id, label) {
   ns <- NS(id) ## all IDs of UI functions need to be wrapped in ns()
@@ -23,9 +44,13 @@ shinyModuleUserInterface <- function(id, label) {
              ),
       ), 
       column(6, 
-             sliderInput(ns("opacity"), "Opacity", min = 0, max = 1, value = 0.5), 
-             actionButton(ns("clear"), label = "Remove all animals from map")
-      ) 
+             sliderInput(ns("opacity"), "Opacity", min = 0, max = 1, value = 0.5),
+             div(
+               style = "display: flex; flex-wrap: wrap; gap: 6px;",
+               actionButton(ns("add_all"), label = "Add all animals to map", class = "btn-sm"),
+               actionButton(ns("clear"), label = "Remove all animals from map", class = "btn-sm")
+             )
+      )
     ),
     hr(),
     shinycssloaders::withSpinner(leafletOutput(ns("map"), height = "800"))
@@ -41,31 +66,29 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
     map(st_bbox)
   bbx <- do.call(rbind, bbx)
   
+  # Occurrence contours at the chosen isopleth level: a list with one sf
+  # object per animal, in the same order and with the same names as occu
   occu.iso <- reactive({
-    occu_sf <- map(occu, ~ sf::st_as_sf(ctmm::SpatialPolygonsDataFrame.UD(.x, level.UD = input$isopleth_levels))) |> bind_rows()
-    
+    occu_sf <- map(occu, ~ ud_contours(.x, level.UD = input$isopleth_levels))
+
     # export as geopackage
-    occu_sf |> 
+    occu_sf |>
+      bind_rows() |>
       sf::st_write(appArtifactPath("occurrence.gpkg"), append = FALSE)
+
     occu_sf
   })
-  
-  
+
+  # The same contours in longitude/latitude for the map
   occu.leaflet <- reactive({
-    occu_sf <- occu.iso() %>%  
-      st_transform(4326) |> 
-      group_split(name)
-    names(occu_sf) <- names(occu)
-    occu_sf
+    map(occu.iso(), ~ st_transform(.x, 4326))
   })
   
   output$map <- renderLeaflet({
     leaflet() |> 
       addTiles(group = "OSM") |> 
-      addTiles('http://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 
-               options = providerTileOptions(noWrap = TRUE), group="World Imagery") |> 
-      addProviderTiles(providers$Stamen.Toner, group = "Toner") |> 
-      addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite") |> 
+      addProviderTiles(providers$Esri.WorldImagery,
+                       options = providerTileOptions(noWrap = TRUE), group = "World Imagery") |>
       fitBounds(min(bbx[, 1]), min(bbx[, 2]), max(bbx[, 3]), max(bbx[, 4]))
     
   })
@@ -78,7 +101,8 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
       clearControls()
     for (i in 1:length(occu.leaflet())) {
       m <- m |> addPolygons(data = occu.leaflet()[[i]],
-                            group = names(occu.leaflet())[i], 
+                            group = names(occu.leaflet())[i],
+                            label = ~name,
                             color = cols[i],
                             fillColor = cols[i],
                             fillOpacity = input$opacity)
@@ -87,7 +111,7 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
     
     m |> 
       addLayersControl(
-        baseGroups = c("OSM", "Wolrd Imagery", "Toner", "Toner Lite"),
+        baseGroups = c("OSM", "World Imagery"),
         overlayGroups = names(occu.leaflet()),
         options = layersControlOptions(collapsed = TRUE)
       ) |> 
@@ -97,6 +121,13 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
         labels  = names(occu))  
     
   })
+  # The two buttons are left out of saved settings. Otherwise restoring them
+  # would count as a click and hide or show the animals when the App opens.
+  setBookmarkExclude(c("add_all", "clear"))
+  observeEvent(input$add_all, {
+    leafletProxy("map") |>
+      showGroup(names(occu.leaflet()))
+  })
   observeEvent(input$clear, {
     leafletProxy("map") |> 
       hideGroup(names(occu.leaflet()))
@@ -104,18 +135,19 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
   
   
   # Artefact: tifs
-  dir.create(targetDirUDs <- tempdir())
+  targetDirUDs <- tempfile("uds")
+  dir.create(targetDirUDs)
   
   r <- lapply(names(occu), function(x) 
     writeRaster(occu[[x]], file.path(targetDirUDs, paste0(x, ".tif")), overwrite = TRUE))
   
   zip::zip(
-    zipfile = appArtifactPath("occurence_uds.zip"),
+    zipfile = appArtifactPath("occurrence_uds.zip"),
     files = list.files(targetDirUDs, full.names = TRUE, pattern = "tif$"),
     mode = "cherry-pick"
   )
   
-  return(reactive({ 
-    c(data[[2]], list(occu), data[[1]])
-  })) ## if data are not modified, the unmodified input data must be returned
+  return(reactive({
+    list(model = data[[1]], uds = occu, data = data[[2]])
+  }))
 }
