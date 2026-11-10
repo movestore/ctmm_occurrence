@@ -7,6 +7,29 @@ library(leaflet)
 library(zip)
 library(shinycssloaders)
 
+# Generate contour polygons for the occurrence distribution at the given
+# isopleth level. This ensures that internal holes within the distribution
+# contours are correctly left unfilled. At the time of writing, there is a bug
+# in ctmm (1.3.x) that does not mark these holes correctly, meaning that the
+# entire region within the external contour is filled.
+ud_contours <- function(ud, level.UD) {
+  spdf <- ctmm::SpatialPolygonsDataFrame.UD(ud, level.UD = level.UD)
+
+  # Use even-odd rule to identify holes. Contour rings are nested by definition,
+  # so the symmetric difference of all rings keeps the area inside an odd
+  # number of rings and drops the areas inside an even number (holes).
+  geometries <- lapply(spdf@polygons, function(contour) {
+    rings <- lapply(contour@Polygons, function(ring) sf::st_polygon(list(ring@coords)))
+    sf::st_cast(Reduce(sf::st_sym_difference, rings), "MULTIPOLYGON")
+  })
+
+  # Rebuild output to mirror `ctmm::SpatialPolygonsDataFrame.UD()` structure.
+  # Contour names are the ctmm polygon `ID` values.
+  sf::st_sf(
+    name = vapply(spdf@polygons, function(contour) contour@ID, character(1)),
+    geometry = sf::st_sfc(geometries, crs = sf::st_crs(spdf@proj4string))
+  )
+}
 
 shinyModuleUserInterface <- function(id, label) {
   ns <- NS(id) ## all IDs of UI functions need to be wrapped in ns()
@@ -46,12 +69,7 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
   # Occurrence contours at the chosen isopleth level: a list with one sf
   # object per animal, in the same order and with the same names as occu
   occu.iso <- reactive({
-    occu_sf <- map(
-      occu,
-      ~ sf::st_as_sf(
-        ctmm::SpatialPolygonsDataFrame.UD(.x, level.UD = input$isopleth_levels)
-      )
-    )
+    occu_sf <- map(occu, ~ ud_contours(.x, level.UD = input$isopleth_levels))
 
     # export as geopackage
     occu_sf |>

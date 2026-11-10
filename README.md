@@ -124,6 +124,11 @@ selected isopleth level. The rasters are written with ctmm's `writeRaster()`
 method for UDs, which writes the cumulative distribution function (CDF) by
 default.
 
+Note: ctmm 1.3.x does not mark holes within a contour. This App identifies
+nested contour rings so that areas inside the outer contour that are not part
+of the occurrence area at the selected isopleth level are left out of the
+output polygons.
+
 Long gaps in the tracking data are only partially interpolated to prevent
 the occurrence distribution from disproportionately representing the movement
 model rather than the observed locations. In these cases, the occurrence
