@@ -7,6 +7,10 @@ library(leaflet)
 library(zip)
 library(shinycssloaders)
 
+# Default isopleth level. Used for the slider and whenever the slider has no
+# value, e.g. when the App runs in a workflow without its UI being opened.
+default_level <- 0.95
+
 # Generate contour polygons for the occurrence distribution at the given
 # isopleth level. This ensures that internal holes within the distribution
 # contours are correctly left unfilled. At the time of writing, there is a bug
@@ -48,7 +52,7 @@ shinyModuleUserInterface <- function(id, label) {
              sliderInput(
                ns("isopleth_levels"),
                "Isopleth level:",
-               min = 0.01, max = .99, value = .95
+               min = 0.01, max = .99, value = default_level
              ),
       ), 
       column(6, 
@@ -74,17 +78,21 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
     map(st_bbox)
   bbx <- do.call(rbind, bbx)
   
+  # Selected isopleth level, or the default if the UI has not been opened
+  level <- reactive(input$isopleth_levels %||% default_level)
+
   # Occurrence contours at the chosen isopleth level: a list with one sf
   # object per animal, in the same order and with the same names as occu
   occu.iso <- reactive({
-    occu_sf <- map(occu, ~ ud_contours(.x, level.UD = input$isopleth_levels))
+    map(occu, ~ ud_contours(.x, level.UD = level()))
+  })
 
-    # export as geopackage
-    occu_sf |>
+  # Artefact: occurrence contours as a geopackage. Written independently of
+  # the map so that it is produced even if the UI is never opened.
+  observe({
+    occu.iso() |>
       bind_rows() |>
       sf::st_write(appArtifactPath("occurrence.gpkg"), append = FALSE)
-
-    occu_sf
   })
 
   # The same contours in longitude/latitude for the map
@@ -104,6 +112,8 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
   cols <- rainbow(length(occu))
   
   observe({
+    # Wait for the opacity slider, which only has a value once the UI is open
+    req(input$opacity)
     m <- leafletProxy("map") |> 
       clearShapes() |> 
       clearControls()
