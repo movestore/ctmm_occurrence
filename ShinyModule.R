@@ -6,6 +6,7 @@ library(purrr)
 library(leaflet)
 library(zip)
 library(shinycssloaders)
+library(leafem)
 
 # Generate contour polygons for the occurrence distribution at the given
 # isopleth level. This ensures that internal holes within the distribution
@@ -97,7 +98,10 @@ shinyModule <- function(input, output, session, data){ ## The parameter "data" i
       addTiles(group = "OSM") |> 
       addProviderTiles(providers$Esri.WorldImagery,
                        options = providerTileOptions(noWrap = TRUE), group = "World Imagery") |>
-      fitBounds(min(bbx[, 1]), min(bbx[, 2]), max(bbx[, 3]), max(bbx[, 4]))
+      fitBounds(min(bbx[, 1]), min(bbx[, 2]), max(bbx[, 3]), max(bbx[, 4])) |>
+      addHomeButton(
+        ext = c(min(bbx[, 1]), min(bbx[, 2]), max(bbx[, 3]), max(bbx[, 4])),
+        group = "Full extent", position = "bottomleft")
     
   })
   
