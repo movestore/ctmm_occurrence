@@ -26,6 +26,9 @@
       },
       {
         "name": "leaflet"
+      },
+      {
+        "name": "leafem"
       }
     ]
   },
