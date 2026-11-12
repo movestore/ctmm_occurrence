@@ -73,7 +73,17 @@ shinyModuleUserInterface <- function(id, label) {
 shinyModule <- function(input, output, session, data){ ## The parameter "data" is reserved for the data object passed on from the previous app
   ns <- session$ns ## all IDs of UI functions need to be wrapped in ns()
   
-  occu <- occurrence(data[[2]], data[[1]])
+  # Ensure all telemetry columns are valid and unique. See
+  # https://github.com/movestore/move2TOtelemetry/issues/7
+  telemetry <- map(
+    data[[2]],
+    function(x) {
+      names(x) <- make.names(names(x), unique = TRUE)
+      x
+    }
+  )
+
+  occu <- occurrence(telemetry, data[[1]])
   bbx <- map(occu, ~ st_as_sf(ctmm::SpatialPolygonsDataFrame.UD(.x, level.UD = 0.97)) |> 
                st_transform(4326)) |> 
     map(st_bbox)
