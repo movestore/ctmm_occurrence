@@ -41,6 +41,12 @@ test_that("happy path", {
 
   expect_gt(file.size(file.path(artifacts_dir, "occurrence_plots.pdf")), 0)
 
+  # Map: a single HTML file with a hover label for each contour
+  map <- readLines(file.path(artifacts_dir, "occurrence_map.html"), warn = FALSE)
+  expect_true(any(grepl("\"Cilla, 95% occurrence\"", map, fixed = TRUE)))
+  expect_true(any(grepl("\"Mvubu, 50% occurrence\"", map, fixed = TRUE)))
+  expect_false(dir.exists(file.path(artifacts_dir, "occurrence_map_files")))
+
   # Rasters: one per animal
   expect_setequal(
     zip::zip_list(file.path(artifacts_dir, "occurrence_uds.zip"))$filename,

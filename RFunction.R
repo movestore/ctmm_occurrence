@@ -1,6 +1,7 @@
 library(moveapps)
 library(ctmm)
 library(sf)
+library(leaflet)
 
 rFunction <- function(data, isopleth_levels) {
   lvls <- parse_levels(isopleth_levels)
@@ -41,6 +42,8 @@ rFunction <- function(data, isopleth_levels) {
   )
 
   write_pdf(appArtifactPath("occurrence_plots.pdf"), telemetry, occu, lvls)
+
+  write_map(appArtifactPath("occurrence_map.html"), contours, names(occu), lvls)
 
   # One UD raster artifact per animal
   targetDirUDs <- tempfile("uds")
@@ -148,7 +151,7 @@ contour_colors <- function(n) {
   grDevices::hcl.colors(100, "viridis")[rev(round(seq(5, 55, length.out = n)))]
 }
 
-# Colour for each animal, used in the PDF overview pages
+# Colour for each animal, used in the PDF overview pages and on the map
 animal_colors <- function(n) {
   grDevices::hcl.colors(n, palette = "Dark 3")
 }
@@ -202,4 +205,107 @@ write_pdf <- function(file, telemetry, occu, levels) {
     title(id)
     level_legend(levels)
   }
+}
+
+# Interactive map as standalone HTML file. Shows all animals at all requested
+# isopleth levels. Animals can be toggled on and off.
+write_map <- function(file, contours, ids, levels) {
+  cols <- stats::setNames(animal_colors(length(ids)), ids)
+  contours <- sf::st_transform(contours, 4326)
+
+  # Round the coordinates to 5 decimals (about 1 m), which is plenty for the
+  # map and roughly halves the size of the HTML file. Points that become
+  # identical to the previous point are dropped.
+  round_ring <- function(ring) {
+    ring <- round(ring, digits = 5)
+    ring[c(TRUE, rowSums(abs(diff(ring))) > 0), , drop = FALSE]
+  }
+
+  sf::st_geometry(contours) <- sf::st_sfc(
+    lapply(
+      sf::st_geometry(contours),
+      function(geom) {
+        sf::st_multipolygon(
+          lapply(geom, function(polygon) lapply(polygon, round_ring))
+        )
+      }
+    ),
+    crs = 4326
+  )
+
+  # Hover labels for each animal's region
+  contours$label <- paste0(contours$id, ", ", contours$level * 100, "% occurrence")
+
+  # Starting map view
+  bbox <- unname(sf::st_bbox(contours[contours$level == max(levels), ]))
+
+  m <- leaflet(options = leafletOptions(zoomSnap = 0.25, zoomDelta = 0.5)) |>
+    addProviderTiles(providers$Esri.WorldTopoMap, group = "World Topo Map") |>
+    addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery") |>
+    fitBounds(bbox[1], bbox[2], bbox[3], bbox[4])
+
+  # One layer group per animal, so animals can be toggled on/off. The largest
+  # level is drawn first so that smaller contours sit on top of it.
+  for (level in sort(levels, decreasing = TRUE)) {
+    for (id in ids) {
+      m <- m |>
+        addPolygons(
+          data = contours[contours$id == id & contours$level == level, ],
+          group = id,
+          label = ~label,
+          color = cols[[id]],
+          weight = 2,
+          opacity = 1,
+          fillColor = cols[[id]],
+          fillOpacity = 0.2
+        )
+    }
+  }
+
+  m <- m |>
+    addControl(
+      html = paste0(
+        "<b>Occurrence distribution</b><br>Shaded regions show the ",
+        paste0(levels * 100, "%", collapse = ", "), " contour",
+        if (length(levels) > 1) "s", "<br>Hover over a region for details"
+      ),
+      position = "topright"
+    ) |>
+    addLayersControl(
+      baseGroups = c("World Topo Map", "World Imagery"),
+      overlayGroups = ids,
+      options = layersControlOptions(collapsed = FALSE)
+    ) |>
+    addLegend(
+      position = "bottomright",
+      colors = unname(cols),
+      labels = ids,
+      opacity = 1
+    ) |>
+    addEasyButton(easyButton(
+      icon = "<span>Zoom to extent</span>",
+      title = "Zoom to all occurrence distributions",
+      onClick = JS(
+        sprintf(
+          "function(btn, map) { map.fitBounds([[%f, %f], [%f, %f]]); }",
+          bbox[2], bbox[1], bbox[4], bbox[3]
+        )
+      )
+    )) |>
+    # Larger text in the panels than leaflet's default (12px for the layer
+    # menu, 14px for the title and legend boxes), for readability. Leaflet's
+    # buttons are fixed squares, so the text button is widened to fit its label.
+    htmlwidgets::prependContent(htmltools::tags$style(
+      ".leaflet-control-layers, .leaflet-control.info { font-size: 16px; line-height: 1.4; }",
+      ".easy-button-button { width: auto !important; padding: 0 8px; font-size: 14px; }"
+    ))
+
+  # saveWidget() can leave a folder of JavaScript libraries next to the file,
+  # even though they are embedded in it. Save to a temporary folder so that
+  # only the HTML file ends up with the artefacts.
+  tmp_file <- file.path(tempfile("map"), "occurrence_map.html")
+  dir.create(dirname(tmp_file))
+  htmlwidgets::saveWidget(m, tmp_file, selfcontained = TRUE, title = "Occurrence distributions")
+  file.copy(tmp_file, file, overwrite = TRUE)
+  unlink(dirname(tmp_file), recursive = TRUE)
 }

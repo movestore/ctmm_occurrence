@@ -22,6 +22,15 @@
       },
       {
         "name": "purrr"
+      },
+      {
+        "name": "leaflet"
+      },
+      {
+        "name": "htmlwidgets"
+      },
+      {
+        "name": "htmltools"
       }
     ]
   },
