@@ -1,16 +1,93 @@
-library(shiny)
+library(moveapps)
 library(ctmm)
 library(sf)
-library(dplyr)
-library(purrr)
-library(leaflet)
-library(zip)
-library(shinycssloaders)
-library(leafem)
 
-# Default isopleth level. Used for the slider and whenever the slider has no
-# value, e.g. when the App runs in a workflow without its UI being opened.
-default_level <- 0.95
+rFunction <- function(data, isopleth_levels) {
+  lvls <- parse_levels(isopleth_levels)
+
+  models <- data[[1]]
+
+  # Ensure all telemetry columns are valid and unique. See
+  # https://github.com/movestore/move2TOtelemetry/issues/7
+  # (Only the copy passed to occurrence() is changed; the output keeps the
+  # input data as it was.)
+  telemetry <- purrr::map(
+    data[[2]],
+    function(x) {
+      names(x) <- make.names(names(x), unique = TRUE)
+      x
+    }
+  )
+
+  logger.info(
+    paste0(
+      "Estimating occurrence distributions for ", length(telemetry),
+      " animal(s) at isopleth level(s) ", paste(lvls, collapse = ", ")
+    )
+  )
+
+  occu <- occurrence(telemetry, models)
+
+  # Occurrence contour polygon artifact for all animal/level combinations
+  contours <- purrr::list_rbind(
+    purrr::imap(occu, function(ud, id) animal_contours(ud, id, lvls))
+  )
+
+  sf::st_write(
+    contours,
+    appArtifactPath("occurrence.gpkg"),
+    append = FALSE,
+    quiet = TRUE
+  )
+
+  # One UD raster artifact per animal
+  targetDirUDs <- tempfile("uds")
+  dir.create(targetDirUDs)
+
+  purrr::walk(
+    names(occu),
+    function(id) {
+      writeRaster(
+        occu[[id]],
+        file.path(targetDirUDs, paste0(id, ".tif")),
+        overwrite = TRUE
+      )
+    }
+  )
+
+  zip::zip(
+    zipfile = appArtifactPath("occurrence_uds.zip"),
+    files = list.files(targetDirUDs, full.names = TRUE, pattern = "tif$"),
+    mode = "cherry-pick"
+  )
+
+  list(model = models, uds = occu, data = data[[2]])
+}
+
+
+# Convert isopleth level setting (comma delimited string) into a sorted
+# vector of unique numbers. Stops with a message if any value is not a number
+# strictly between 0 and 1.
+parse_levels <- function(isopleth_levels) {
+  if (is.null(isopleth_levels) || all(trimws(isopleth_levels) == "")) {
+    stop("No isopleth level given. Enter one or more levels between 0 and 1, ",
+         "separated by commas (e.g. \"0.5, 0.95\").", call. = FALSE)
+  }
+
+  parts <- trimws(unlist(strsplit(as.character(isopleth_levels), ",")))
+  levels <- suppressWarnings(as.numeric(parts))
+
+  bad <- parts[is.na(levels) | levels <= 0 | levels >= 1]
+
+  if (length(bad) > 0) {
+    stop("Invalid isopleth level(s): ", paste0("\"", bad, "\"", collapse = ", "),
+         ". Each level must be a number between 0 and 1, separated by commas ",
+         "(e.g. \"0.5, 0.95\"). For a 95% contour, enter 0.95, not 95.",
+         call. = FALSE)
+  }
+
+  sort(unique(levels))
+}
 
 # Generate contour polygons for the occurrence distribution at the given
 # isopleth level. This ensures that internal holes within the distribution
@@ -44,142 +121,18 @@ ud_contours <- function(ud, level.UD) {
   )
 }
 
-shinyModuleUserInterface <- function(id, label) {
-  ns <- NS(id) ## all IDs of UI functions need to be wrapped in ns()
-  tagList(
-    titlePanel("Occurrence distribution"),
-    fluidRow(
-      column(6,
-             sliderInput(
-               ns("isopleth_levels"),
-               "Isopleth level:",
-               min = 0.01, max = .99, value = default_level
-             ),
-      ), 
-      column(6, 
-             sliderInput(ns("opacity"), "Opacity", min = 0, max = 1, value = 0.5),
-             div(
-               style = "display: flex; flex-wrap: wrap; gap: 6px;",
-               actionButton(ns("add_all"), label = "Add all animals to map", class = "btn-sm"),
-               actionButton(ns("clear"), label = "Remove all animals from map", class = "btn-sm")
-             )
-      )
-    ),
-    hr(),
-    shinycssloaders::withSpinner(leafletOutput(ns("map"), height = "800"))
-  )
-}
+# Get contours of one animal's UD at each isopleth level, one row per level.
+animal_contours <- function(ud, id, levels) {
+  lvl_contours <- purrr::map(
+    levels,
+    function(lvl) {
+      contours <- ud_contours(ud, level.UD = lvl)
 
-shinyModule <- function(input, output, session, data){ ## The parameter "data" is reserved for the data object passed on from the previous app
-  ns <- session$ns ## all IDs of UI functions need to be wrapped in ns()
-  
-  # Ensure all telemetry columns are valid and unique. See
-  # https://github.com/movestore/move2TOtelemetry/issues/7
-  telemetry <- map(
-    data[[2]],
-    function(x) {
-      names(x) <- make.names(names(x), unique = TRUE)
-      x
+      contours$id <- id
+      contours$level <- lvl
+      contours[, c("id", "level", "name")]
     }
   )
 
-  occu <- occurrence(telemetry, data[[1]])
-  bbx <- map(occu, ~ st_as_sf(ctmm::SpatialPolygonsDataFrame.UD(.x, level.UD = 0.97)) |> 
-               st_transform(4326)) |> 
-    map(st_bbox)
-  bbx <- do.call(rbind, bbx)
-  
-  # Selected isopleth level, or the default if the UI has not been opened
-  level <- reactive(input$isopleth_levels %||% default_level)
-
-  # Occurrence contours at the chosen isopleth level: a list with one sf
-  # object per animal, in the same order and with the same names as occu
-  occu.iso <- reactive({
-    map(occu, ~ ud_contours(.x, level.UD = level()))
-  })
-
-  # Artefact: occurrence contours as a geopackage. Written independently of
-  # the map so that it is produced even if the UI is never opened.
-  observe({
-    occu.iso() |>
-      bind_rows() |>
-      sf::st_write(appArtifactPath("occurrence.gpkg"), append = FALSE)
-  })
-
-  # The same contours in longitude/latitude for the map
-  occu.leaflet <- reactive({
-    map(occu.iso(), ~ st_transform(.x, 4326))
-  })
-  
-  output$map <- renderLeaflet({
-    leaflet() |> 
-      addTiles(group = "OSM") |> 
-      addProviderTiles(providers$Esri.WorldImagery,
-                       options = providerTileOptions(noWrap = TRUE), group = "World Imagery") |>
-      fitBounds(min(bbx[, 1]), min(bbx[, 2]), max(bbx[, 3]), max(bbx[, 4])) |>
-      addHomeButton(
-        ext = c(min(bbx[, 1]), min(bbx[, 2]), max(bbx[, 3]), max(bbx[, 4])),
-        group = "Full extent", position = "bottomleft")
-    
-  })
-  
-  cols <- rainbow(length(occu))
-  
-  observe({
-    # Wait for the opacity slider, which only has a value once the UI is open
-    req(input$opacity)
-    m <- leafletProxy("map") |> 
-      clearShapes() |> 
-      clearControls()
-    for (i in 1:length(occu.leaflet())) {
-      m <- m |> addPolygons(data = occu.leaflet()[[i]],
-                            group = names(occu.leaflet())[i],
-                            label = ~name,
-                            color = cols[i],
-                            fillColor = cols[i],
-                            fillOpacity = input$opacity)
-    }
-    
-    
-    m |> 
-      addLayersControl(
-        baseGroups = c("OSM", "World Imagery"),
-        overlayGroups = names(occu.leaflet()),
-        options = layersControlOptions(collapsed = TRUE)
-      ) |> 
-      addLegend(
-        position = "bottomright",
-        colors = cols,
-        labels  = names(occu))  
-    
-  })
-  # The two buttons are left out of saved settings. Otherwise restoring them
-  # would count as a click and hide or show the animals when the App opens.
-  setBookmarkExclude(c("add_all", "clear"))
-  observeEvent(input$add_all, {
-    leafletProxy("map") |>
-      showGroup(names(occu.leaflet()))
-  })
-  observeEvent(input$clear, {
-    leafletProxy("map") |> 
-      hideGroup(names(occu.leaflet()))
-  })
-  
-  
-  # Artefact: tifs
-  targetDirUDs <- tempfile("uds")
-  dir.create(targetDirUDs)
-  
-  r <- lapply(names(occu), function(x) 
-    writeRaster(occu[[x]], file.path(targetDirUDs, paste0(x, ".tif")), overwrite = TRUE))
-  
-  zip::zip(
-    zipfile = appArtifactPath("occurrence_uds.zip"),
-    files = list.files(targetDirUDs, full.names = TRUE, pattern = "tif$"),
-    mode = "cherry-pick"
-  )
-  
-  return(reactive({
-    list(model = data[[1]], uds = occu, data = data[[2]])
-  }))
+  purrr::list_rbind(lvl_contours)
 }
