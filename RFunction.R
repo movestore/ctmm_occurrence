@@ -20,16 +20,23 @@ rFunction <- function(data, isopleth_levels) {
     }
   )
 
+  # Time since `start`, for the log, e.g. "3.4 secs" or "2.1 mins"
+  start <- Sys.time()
+  elapsed <- function() format(round(Sys.time() - start, 1))
+
   logger.info(
     paste0(
       "Estimating occurrence distributions for ", length(telemetry),
-      " animal(s) at isopleth level(s) ", paste(lvls, collapse = ", ")
+      " animal(s) at isopleth level(s) ", paste(lvls, collapse = ", "),
+      ". This can take a while for many animals or long tracks."
     )
   )
 
   occu <- occurrence(telemetry, models)
+  logger.info(paste0("Occurrence distributions estimated after ", elapsed()))
 
   # Occurrence contour polygon artifact for all animal/level combinations
+  logger.info("Writing occurrence contours (occurrence.gpkg)")
   contours <- purrr::list_rbind(
     purrr::imap(occu, function(ud, id) animal_contours(ud, id, lvls))
   )
@@ -41,11 +48,14 @@ rFunction <- function(data, isopleth_levels) {
     quiet = TRUE
   )
 
+  logger.info("Writing plots (occurrence_plots.pdf)")
   write_pdf(appArtifactPath("occurrence_plots.pdf"), telemetry, occu, lvls)
 
+  logger.info("Writing interactive map (occurrence_map.html)")
   write_map(appArtifactPath("occurrence_map.html"), contours, names(occu), lvls)
 
   # One UD raster artifact per animal
+  logger.info("Writing UD rasters (occurrence_uds.zip)")
   targetDirUDs <- tempfile("uds")
   dir.create(targetDirUDs)
 
@@ -65,6 +75,7 @@ rFunction <- function(data, isopleth_levels) {
     files = list.files(targetDirUDs, full.names = TRUE, pattern = "tif$"),
     mode = "cherry-pick"
   )
+  logger.info(paste0("All artefacts written after ", elapsed()))
 
   list(model = models, uds = occu, data = data[[2]])
 }
