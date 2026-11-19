@@ -8,14 +8,18 @@ remotes::install_github("movestore/moveapps-sdk-r-package")
 moveapps::logger.init()
 moveapps::clearRecentOutput()
 
-# Lets simulate running your app on MoveApps
 library("moveapps")
 Sys.setenv(tz="UTC")
-Sys.setenv(HTTP_CLIENT_FAKE="yes")
-# `./ShinyModule.R` is the home of your app code
+# `./RFunction.R` is the home of your app code
 # It is the only file which will be bundled into the final app on MoveApps
-source("ShinyModule.R")
+source("RFunction.R")
 
-options(shiny.host = "0.0.0.0")
-options(shiny.port = 3838)
-shinyApp(moveapps::createMoveAppsShinyUI, moveapps::createMoveAppsShinyServer, enableBookmarking = "server")
+# Lets simulate running your app on MoveApps
+moveapps::runMoveAppsApp()
+
+# To run your app with other settings than in `app-configuration.json`, e.g. with personal
+# credentials from `personal.env` (ignored by git), replace the line above by:
+# dotenv::load_dot_env(file = "personal.env")
+# args <- moveapps::configuration()
+# args[["password"]] <- Sys.getenv("MOVEBANK_PASSWORD")
+# moveapps::runMoveAppsApp(args)

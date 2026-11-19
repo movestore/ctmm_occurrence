@@ -1,19 +1,18 @@
 {
   "version": "1.2",
-  "settings": [],
+  "settings": [
+    {
+      "id": "isopleth_levels",
+      "name": "Isopleth level(s)",
+      "description": "Coverage level(s) used to draw occurrence distribution contours. Values should be between 0 and 1. For example, 0.95 gives the smallest area within which the animal was 95% likely to have been present during the tracking period. If multiple values are provided, separate them with commas.",
+      "defaultValue": "0.95",
+      "type": "STRING"
+    }
+  ],
   "dependencies": {
     "R": [
       {
-        "name": "shiny"
-      },
-      {
-        "name": "dplyr"
-      },
-      {
         "name": "ctmm"
-      },
-      {
-        "name": "purrr"
       },
       {
         "name": "sf"
@@ -22,13 +21,16 @@
         "name": "zip"
       },
       {
-        "name": "shinycssloaders"
+        "name": "purrr"
       },
       {
         "name": "leaflet"
       },
       {
-        "name": "leafem"
+        "name": "htmlwidgets"
+      },
+      {
+        "name": "htmltools"
       }
     ]
   },
