@@ -39,6 +39,8 @@ test_that("happy path", {
   expect_setequal(contours$level, c(0.5, 0.95))
   expect_true(all(contours$name == paste0(contours$id, " ", contours$level * 100, "% est")))
 
+  expect_gt(file.size(file.path(artifacts_dir, "occurrence_plots.pdf")), 0)
+
   # Rasters: one per animal
   expect_setequal(
     zip::zip_list(file.path(artifacts_dir, "occurrence_uds.zip"))$filename,
