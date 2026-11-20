@@ -198,7 +198,8 @@ write_pdf <- function(file, telemetry, occu, levels) {
 
   for (level in levels) {
     par(mar = plot_mar)
-    plot(telemetry, UD = occu, level.UD = level, col = animal_cols,
+    plot(telemetry, UD = occu, level.UD = level,
+         col = grDevices::adjustcolor(animal_cols, alpha.f = 0.4),
          col.UD = animal_cols, col.level = animal_cols, col.grid = NA)
     title(paste0("All animals: ", level * 100, "% occurrence distribution"))
     animal_legend(names(occu), animal_cols)
