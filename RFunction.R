@@ -36,11 +36,13 @@ rFunction <- function(data, isopleth_levels) {
   logger.info(paste0("Occurrence distributions estimated after ", elapsed()))
 
   # Occurrence contour polygon artifact for all animal/level combinations
-  logger.info("Writing occurrence contours (occurrence.gpkg)")
+  logger.info("Computing occurrence contours")
   contours <- purrr::list_rbind(
     purrr::imap(occu, function(ud, id) animal_contours(ud, id, lvls))
   )
+  logger.info(paste0("Occurrence contours computed after ", elapsed()))
 
+  logger.info("Writing occurrence contours (occurrence.gpkg)")
   sf::st_write(
     contours,
     appArtifactPath("occurrence.gpkg"),
