@@ -107,6 +107,23 @@ parse_levels <- function(isopleth_levels) {
   sort(unique(levels))
 }
 
+# Symmetric difference of a list of geometries. Merges them in pairs, then the
+# results in pairs, and so on until one is left. The result is the same as
+# merging them one after another, but much faster for contours with many rings
+# (e.g. occurrence distributions), because each step works on small geometries.
+sym_difference_all <- function(geoms) {
+  while (length(geoms) > 1) {
+    firsts <- seq(1, length(geoms) - 1, by = 2)
+    merged <- lapply(firsts, function(i) sf::st_sym_difference(geoms[[i]], geoms[[i + 1]]))
+    # With an odd number, the last geometry moves on to the next round as is
+    if (length(geoms) %% 2 == 1) {
+      merged <- c(merged, geoms[length(geoms)])
+    }
+    geoms <- merged
+  }
+  geoms[[1]]
+}
+
 # Generate contour polygons for the occurrence distribution at the given
 # isopleth level. This ensures that internal holes within the distribution
 # contours are correctly left unfilled. At the time of writing, there is a bug
@@ -120,7 +137,7 @@ ud_contours <- function(ud, level.UD) {
   # number of rings and drops the areas inside an even number (holes).
   geometries <- lapply(spdf@polygons, function(contour) {
     rings <- lapply(contour@Polygons, function(ring) sf::st_polygon(list(ring@coords)))
-    geom <- Reduce(sf::st_sym_difference, rings)
+    geom <- sym_difference_all(rings)
 
     # Rings that touch can leave zero-width line fragments in the result.
     # Keep only the polygon parts.
