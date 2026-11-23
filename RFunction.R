@@ -61,20 +61,33 @@ rFunction <- function(data, isopleth_levels) {
   targetDirUDs <- tempfile("uds")
   dir.create(targetDirUDs)
 
-  purrr::walk(
-    names(occu),
-    function(id) {
-      writeRaster(
-        occu[[id]],
-        file.path(targetDirUDs, paste0(id, ".tif")),
-        overwrite = TRUE
+  # Ensure that file names that come from animal names are valid and unique
+  file_names <- raster_file_names(names(occu))
+  renamed <- file_names != paste0(names(occu), ".tif")
+
+  if (any(renamed)) {
+    logger.warn(
+      paste0(
+        "Renaming animal IDs that would produce invalid file names: ",
+        paste0(names(occu)[renamed], " -> ", file_names[renamed], collapse = ", ")
       )
+    )
+  }
+
+  file_paths <- file.path(targetDirUDs, file_names)
+
+  # Write zip contents and compress
+  purrr::walk2(
+    names(occu),
+    file_paths,
+    function(id, path) {
+      writeRaster(occu[[id]], path, overwrite = TRUE)
     }
   )
 
   zip::zip(
     zipfile = appArtifactPath("occurrence_uds.zip"),
-    files = list.files(targetDirUDs, full.names = TRUE, pattern = "tif$"),
+    files = file_paths,
     mode = "cherry-pick"
   )
   logger.info(paste0("All artefacts written after ", elapsed()))
@@ -105,6 +118,24 @@ parse_levels <- function(isopleth_levels) {
   }
 
   sort(unique(levels))
+}
+
+# Replace dangerous characters in animal names with underscores to ensure
+# output .tif files have valid file names. Ensures that converted file
+# names are unique.
+raster_file_names <- function(ids) {
+  file_names <- fs::path_sanitize(ids, replacement = "_")
+  file_names <- substr(file_names, 1, 50)
+  file_names <- sub("^\\.", "_", file_names)
+  file_names[file_names == ""] <- "animal"
+
+  # make.unique() appends "_1", "_2", ... to repeats. Run it on lower case
+  # names so that case-only clashes count, then copy the suffix over.
+  lower <- tolower(file_names)
+  unique_lower <- make.unique(lower, sep = "_")
+  suffix <- substring(unique_lower, nchar(lower) + 1)
+
+  paste0(file_names, suffix, ".tif")
 }
 
 # Symmetric difference of a list of geometries. Merges them in pairs, then the

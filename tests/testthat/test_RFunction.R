@@ -22,6 +22,14 @@ test_that("invalid isopleth levels stop the App", {
   expect_error(parse_levels("0.5,,0.9"), "Invalid isopleth level")
 })
 
+test_that("animal IDs are turned into safe, unique raster file names", {
+  expect_equal(raster_file_names(c("Cilla", "a.b")), c("Cilla.tif", "a.b.tif"))
+  expect_equal(raster_file_names("M1/2019"), "M1_2019.tif")
+  expect_equal(raster_file_names(c(".hidden", "")), c("_hidden.tif", "animal.tif"))
+  expect_equal(raster_file_names(c("a/b", "a:b", "A_b")), c("a_b.tif", "a_b_1.tif", "A_b_2.tif"))
+  expect_equal(nchar(raster_file_names(strrep("x", 300))), 54)
+})
+
 test_that("happy path", {
   actual <- rFunction(data = test_data, isopleth_levels = "0.5, 0.95")
 
